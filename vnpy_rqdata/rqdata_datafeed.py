@@ -20,12 +20,14 @@ INTERVAL_VT2RQ: Dict[Interval, str] = {
     Interval.MINUTE: "1m",
     Interval.HOUR: "60m",
     Interval.DAILY: "1d",
+    Interval.WEEKLY: "1w"
 }
 
 INTERVAL_ADJUSTMENT_MAP: Dict[Interval, timedelta] = {
     Interval.MINUTE: timedelta(minutes=1),
     Interval.HOUR: timedelta(hours=1),
-    Interval.DAILY: timedelta()         # no need to adjust for daily bar
+    Interval.DAILY: timedelta(),        # no need to adjust for daily bar
+    Interval.WEEKLY: timedelta()        # no need to adjust for daily bar
 }
 
 FUTURES_EXCHANGES: Set[Exchange] = {
@@ -225,8 +227,8 @@ class RqdataDatafeed(BaseDatafeed):
             frequency=rq_interval,
             fields=fields,
             start_date=start,
-            end_date=end,
-            adjust_type="none"
+            end_date=end
+            # adjust_type="none"
         )
 
         data: List[BarData] = []
@@ -323,8 +325,8 @@ class RqdataDatafeed(BaseDatafeed):
             frequency="tick",
             fields=fields,
             start_date=start,
-            end_date=end,
-            adjust_type="none"
+            end_date=end
+            # adjust_type="none"
         )
 
         data: List[TickData] = []
