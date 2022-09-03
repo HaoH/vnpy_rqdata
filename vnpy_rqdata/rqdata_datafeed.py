@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Set, Optional, Callable
 
 from numpy import ndarray
-from pandas import DataFrame
+from pandas import DataFrame, Timestamp
 from rqdatac import init
 from rqdatac.services.get_price import get_price
 from rqdatac.services.future import get_dominant_price
@@ -238,7 +238,12 @@ class RqdataDatafeed(BaseDatafeed):
             df.fillna(0, inplace=True)
 
             for row in df.itertuples():
-                dt: datetime = row.Index[1].to_pydatetime() - adjustment
+                if type(row.Index[1]) == Timestamp:
+                    dt: datetime = row.Index[1].to_pydatetime() - adjustment
+                elif type(row.Index[1]) == date:
+                    dt: datetime = row.Index[1] - adjustment
+                    dt = datetime.combine(dt.today(), datetime.min.time())
+
                 dt: datetime = dt.replace(tzinfo=CHINA_TZ)
 
                 bar: BarData = BarData(
