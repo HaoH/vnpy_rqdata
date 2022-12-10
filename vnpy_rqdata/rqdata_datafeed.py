@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Dict, List, Set, Optional, Callable
 
 from numpy import ndarray
@@ -128,10 +128,10 @@ def to_rq_symbol(symbol: str, exchange: Exchange, all_symbols: ndarray) -> str:
 class RqdataDatafeed(BaseDatafeed):
     """米筐RQData数据服务接口"""
 
-    def __init__(self):
+    def __init__(self, username=None, password=None):
         """"""
-        self.username: str = SETTINGS["datafeed.username"]
-        self.password: str = SETTINGS["datafeed.password"]
+        self.username: str = SETTINGS["datafeed.username"] if username is None else username
+        self.password: str = SETTINGS["datafeed.password"] if password is None else password
 
         self.inited: bool = False
         self.symbols: ndarray = None
