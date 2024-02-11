@@ -3,7 +3,7 @@ from typing import Dict, List, Set, Optional, Callable
 
 from numpy import ndarray
 from pandas import DataFrame, Timestamp
-from rqdatac import init
+from rqdatac import init, index_components, get_ex_factor, get_shares
 from rqdatac.services.get_price import get_price
 from rqdatac.services.future import get_dominant_price
 from rqdatac.services.basic import all_instruments
@@ -452,3 +452,36 @@ class RqdataDatafeed(BaseDatafeed):
                 data.append(bar)
 
         return data
+
+    def index_components(self, symbol,  output: Callable = print):
+        """
+        Query index components
+        """
+        if not self.inited:
+            n: bool = self.init(output)
+            if not n:
+                return None
+
+        return index_components(symbol)
+
+    def get_ex_factor(self, symbols, output: Callable = print):
+        """
+        Query ex_factor
+        """
+        if not self.inited:
+            n: bool = self.init(output)
+            if not n:
+                return None
+
+        return get_ex_factor(symbols)
+
+    def get_shares(self, symbols, start_date, end_date, output: Callable = print):
+        """
+        Query shares
+        """
+        if not self.inited:
+            n: bool = self.init(output)
+            if not n:
+                return None
+
+        return get_shares(symbols, start_date, end_date)
