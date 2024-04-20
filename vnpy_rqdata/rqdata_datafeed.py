@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, date
 from typing import Dict, List, Set, Optional, Callable
 
+import pandas as pd
 from numpy import ndarray
 from pandas import DataFrame, Timestamp
 from rqdatac import init, index_components, get_ex_factor, get_shares
@@ -9,6 +10,7 @@ from rqdatac.services.future import get_dominant_price
 from rqdatac.services.basic import all_instruments
 from rqdatac.share.errors import RQDataError
 
+from ex_vnpy.object import SharesData
 from vnpy.trader.setting import SETTINGS
 from vnpy.trader.constant import Exchange, Interval
 from vnpy.trader.object import BarData, TickData, HistoryRequest
@@ -124,6 +126,12 @@ def to_rq_symbol(symbol: str, exchange: Exchange, all_symbols: ndarray) -> str:
 
     return rq_symbol
 
+def to_rq_symbol_from_vt(vt_symbol: str, all_symbols: ndarray) -> str:
+    """将交易所代码转换为米筐代码"""
+    # 股票
+    symbol, exchange = vt_symbol.split('.')
+    exchange = Exchange(exchange)
+    return to_rq_symbol(symbol, exchange, all_symbols)
 
 class RqdataDatafeed(BaseDatafeed):
     """米筐RQData数据服务接口"""
@@ -485,3 +493,54 @@ class RqdataDatafeed(BaseDatafeed):
                 return None
 
         return get_shares(symbols, start_date, end_date)
+
+    def query_shares_history(self, vt_symbols: List[str], start: datetime, end: datetime, output: Callable = print):
+        if not self.inited:
+            n: bool = self.init(output)
+            if not n:
+                return []
+
+        # 默认多取一天的数据，用来判断start日期是否发生变更
+        # 如果结果的第一条日期晚于start，则需要保留
+        new_start: datetime = start - timedelta(days=1)
+        start_str = new_start.strftime("%Y-%m-%d")
+        end_str = end.strftime("%Y-%m-%d")
+        rq_symbols = [to_rq_symbol_from_vt(vt_symbol, self.symbols) for vt_symbol in vt_symbols]
+        shares_df = get_shares(rq_symbols, start_str, end_str, expect_df=True)
+        shares_df.sort_values(by=['order_book_id', 'date'], inplace=True)
+
+        # 对circulation_a值为NaN的情况进行填充，根据下一个非空的 circulation_a/total_a 的比值缩放当前的circulation_a
+        # 先对total_a使用后续第一个非NaN的值进行填充, e.g. 600938
+        shares_df['total_a'] = shares_df['total_a'].fillna(method='bfill')
+
+        # e.g. 000166
+        shares_df['next_valid_ratio'] = (shares_df['circulation_a'] / shares_df['total_a']).fillna(method='bfill')
+        shares_df['circulation_a'] = shares_df.apply(
+            lambda row: row['total_a'] * row['next_valid_ratio'] if pd.isna(row['circulation_a']) else row['circulation_a'],
+            axis=1
+        )
+
+        # 计算变化
+        shares_df['previous'] = shares_df.groupby('order_book_id')['circulation_a'].shift(1)
+        shares_df['change'] = shares_df['circulation_a'] - shares_df['previous']
+        changed_df = shares_df[(shares_df['change'] != 0)].reset_index()
+
+        # 将单一变化时点转换为开始和结束日期，方便联合查询
+        changed_df['start_dt'] = changed_df['date']
+        changed_df['end_dt'] = changed_df.groupby('order_book_id')['date'].shift(-1) - pd.Timedelta(days=1)
+        changed_df['end_dt'] = changed_df['end_dt'].transform(lambda x: '9999-12-31' if pd.isna(x) else x)
+
+        # 假设：超过30天的查询表示数据库重建, 低于30天的查询表示每天的数据更新
+        if end - new_start < timedelta(days=30):
+            first_date_str = shares_df.index[0][1].strftime('%Y-%m-%d') if len(shares_df) > 0 else start_str
+            changed_df = changed_df[changed_df['date'] != first_date_str]
+
+        new_df = changed_df[['order_book_id', 'start_dt', 'end_dt', 'circulation_a', 'non_circulation_a', 'total_a', 'total']].copy()
+        new_df['symbol'] = new_df['order_book_id'].transform(lambda x: x[:6])
+        new_df['exchange'] = new_df['order_book_id'].transform(lambda x: 'SSE' if x[-4:] == 'XSHG' else 'SZSE')
+
+        new_change_start: List = new_df.groupby('order_book_id')[['symbol', 'exchange', 'start_dt']].first().to_dict(
+            'records')
+
+        results: List[SharesData] = SharesData.from_dicts(new_df.to_dict('records'))
+        return results, new_change_start
